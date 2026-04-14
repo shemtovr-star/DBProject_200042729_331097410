@@ -45,35 +45,46 @@
 **לינק לאפליקציה:** https://aistudio.google.com/prompts/190_XYT5-ZDsGzGkIizTEiP0bFTndEfuW
 
 ### מסך 1 — ניהול מטופלים
-![מסך מטופלים](screenshots/screen1.png)
+![מסך מטופלים](שלב_א/screenshots/screen1.png)
 
 ### מסך 2 — ניהול תורים
-![מסך תורים](screenshots/screen2.png)
+![מסך תורים](שלב_א/screenshots/screen2.png)
 
 ### מסך 3 — רופאים ומחלקות
-![מסך רופאים](screenshots/screen3.png)
+![מסך רופאים](שלב_א/screenshots/screen3.png)
 
 ### מסך 4 — רשומות רפואיות
-![מסך רשומות](screenshots/screen4.png)
+![מסך רשומות](שלב_א/screenshots/screen4.png)
 
 ---
 
 ## 3. תרשים ERD
-![ERD](screenshots/ERD.png)
+![ERD](שלב_א/screenshots/ERD.png)
 
 ---
 
 ## 4. תרשים DSD
-![DSD](screenshots/DSD.png)
+![DSD](שלב_א/screenshots/DSD.png)
 
 ---
 
 ## 5. החלטות עיצוב
 
-- **10 ישויות** — Patient, Doctor, Nurse, Department, Appointment, Visit, Medication, Prescription, MedicalTest, InsurancePolicy
-- **שדות DATE משמעותיים** — birth_date, appointment_date, visit_date, test_date, expiry_date, start_date
-- **נרמול 3NF** — כל מידע נשמר פעם אחת בלבד בטבלה המתאימה
-- **אילוצים** — CHECK על status בטבלת Appointment, NOT NULL על שדות חובה, UNIQUE על email
+**1. בחרנו קליניקה כללית** — כי יש בה הרבה ישויות טבעיות שמתחברות אחת לשנייה ומאפשרות שאילתות מעניינות.
+
+**2. 10 ישויות במקום 6** — בחרנו יותר מהמינימום כדי להעשיר את הפרויקט ולאפשר שאילתות מורכבות יותר.
+
+**3. הפרדנו Doctor ו-Nurse לטבלאות נפרדות** — כי לכל אחד מהם תפקיד שונה במערכת. זה גם מאפשר לנו לנהל כוח אדם בצורה מדויקת יותר.
+
+**4. יצרנו טבלת Visit נפרדת** — במקום לשמור את האבחנה בתוך Appointment, כי ביקור מתועד הוא אירוע שונה מתור.
+
+**5. InsurancePolicy מחוברת למטופל** — כי ביטוח שייך למטופל ספציפי ולא לביקור.
+
+**6. שדות DATE משמעותיים** — בחרנו 6 שדות תאריך: birth_date, appointment_date, visit_date, test_date, expiry_date, start_date — כולם משמשים לשאילתות משמעותיות.
+
+**7. נרמול 3NF** — כל מידע נשמר פעם אחת בלבד בטבלה המתאימה לו.
+
+**8. אילוצים** — הוספנו CHECK על status בטבלת Appointment, NOT NULL על שדות חובה, ו-UNIQUE על email.
 
 ---
 
@@ -81,15 +92,15 @@
 
 ### שיטה 1 — INSERT ידני
 הוכנסו נתונים ידנית לטבלאות Department ו-Medication.
-![INSERT ידני](screenshots/insert_manual.png)
+![INSERT ידני](שלב_א/screenshots/insert_manual.png)
 
 ### שיטה 2 — סקריפט Python
 נכתב סקריפט Python שייצר 20,000 רשומות לטבלאות Patient ו-Appointment.
-![Python Script](screenshots/insert_python.png)
+![Python Script](שלב_א/screenshots/insert_python.png)
 
 ### שיטה 3 — Mockaroo
 הוכנסו נתונים דרך האתר mockaroo.com לטבלאות Nurse, Visit, Prescription, MedicalTest, InsurancePolicy.
-![Mockaroo](screenshots/insert_mockaroo.png)
+![Mockaroo](שלב_א/screenshots/insert_mockaroo.png)
 
 ---
 
@@ -97,5 +108,5 @@
 
 בוצע גיבוי של בסיס הנתונים דרך pgAdmin.
 שם קובץ הגיבוי: `backup_13_04_2026.backup`
-![גיבוי](screenshots/backup.png)
-![שחזור](screenshots/restore.png)
+![גיבוי](שלב_א/screenshots/backup.png)
+
