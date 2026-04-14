@@ -11,7 +11,7 @@
 -- name: שם המחלקה (קרדיולוגיה, עור וכו')
 -- floor: קומה בה נמצאת המחלקה
 -- phone: טלפון של המחלקה
-CREATE TABLE Department (
+CREATE TABLE IF NOT EXISTS Department (
     department_id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     floor INT,
@@ -28,7 +28,7 @@ CREATE TABLE Department (
 -- email: כתובת מייל ייחודית
 -- start_date: תאריך תחילת עבודה
 -- department_id: המחלקה בה עובד הרופא (FK)
-CREATE TABLE Doctor (
+CREATE TABLE IF NOT EXISTS Doctor (
     doctor_id SERIAL PRIMARY KEY,
     first_name VARCHAR(50) NOT NULL,
     last_name VARCHAR(50) NOT NULL,
@@ -48,7 +48,7 @@ CREATE TABLE Doctor (
 -- email: כתובת מייל ייחודית
 -- start_date: תאריך תחילת עבודה
 -- department_id: המחלקה בה עובדת האחות (FK)
-CREATE TABLE Nurse (
+CREATE TABLE IF NOT EXISTS Nurse (
     nurse_id SERIAL PRIMARY KEY,
     first_name VARCHAR(50) NOT NULL,
     last_name VARCHAR(50) NOT NULL,
@@ -67,7 +67,7 @@ CREATE TABLE Nurse (
 -- phone: טלפון אישי
 -- email: כתובת מייל ייחודית
 -- address: כתובת מגורים
-CREATE TABLE Patient (
+CREATE TABLE IF NOT EXISTS Patient (
     patient_id SERIAL PRIMARY KEY,
     first_name VARCHAR(50) NOT NULL,
     last_name VARCHAR(50) NOT NULL,
@@ -86,7 +86,7 @@ CREATE TABLE Patient (
 -- notes: הערות נוספות
 -- patient_id: המטופל שקבע את התור (FK)
 -- doctor_id: הרופא אצלו נקבע התור (FK)
-CREATE TABLE Appointment (
+CREATE TABLE IF NOT EXISTS Appointment (
     appointment_id SERIAL PRIMARY KEY,
     appointment_date DATE NOT NULL,
     appointment_time TIME NOT NULL,
@@ -105,7 +105,7 @@ CREATE TABLE Appointment (
 -- notes: הערות נוספות
 -- patient_id: המטופל שביקר (FK)
 -- doctor_id: הרופא שטיפל (FK)
-CREATE TABLE Visit (
+CREATE TABLE IF NOT EXISTS Visit (
     visit_id SERIAL PRIMARY KEY,
     visit_date DATE NOT NULL,
     diagnosis TEXT,
@@ -122,7 +122,7 @@ CREATE TABLE Visit (
 -- manufacturer: יצרן התרופה
 -- type: סוג התרופה (אנטיביוטיקה, משכך כאבים וכו')
 -- price: מחיר התרופה
-CREATE TABLE Medication (
+CREATE TABLE IF NOT EXISTS Medication (
     medication_id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     manufacturer VARCHAR(100),
@@ -139,7 +139,7 @@ CREATE TABLE Medication (
 -- duration_days: מספר ימי הטיפול
 -- visit_id: הביקור בו ניתן המרשם (FK)
 -- medication_id: התרופה שנרשמה (FK)
-CREATE TABLE Prescription (
+CREATE TABLE IF NOT EXISTS Prescription (
     prescription_id SERIAL PRIMARY KEY,
     prescription_date DATE NOT NULL,
     dosage TEXT,
@@ -158,7 +158,7 @@ CREATE TABLE Prescription (
 -- notes: הערות נוספות
 -- patient_id: המטופל שעבר את הבדיקה (FK)
 -- doctor_id: הרופא שהזמין את הבדיקה (FK)
-CREATE TABLE MedicalTest (
+CREATE TABLE IF NOT EXISTS MedicalTest (
     test_id SERIAL PRIMARY KEY,
     test_date DATE NOT NULL,
     test_type VARCHAR(100),
@@ -176,7 +176,7 @@ CREATE TABLE MedicalTest (
 -- expiry_date: תאריך תפוגת הביטוח
 -- coverage_amount: סכום הכיסוי הביטוחי
 -- patient_id: המטופל בעל הביטוח (FK)
-CREATE TABLE InsurancePolicy (
+CREATE TABLE IF NOT EXISTS InsurancePolicy (
     policy_id SERIAL PRIMARY KEY,
     company_name VARCHAR(100) NOT NULL,
     policy_number VARCHAR(50) UNIQUE,
