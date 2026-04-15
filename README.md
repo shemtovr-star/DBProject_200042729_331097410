@@ -90,16 +90,19 @@
 
 ## 6. שיטות הכנסת נתונים
 
-### שיטה 1 — INSERT ידני
-הוכנסו נתונים ידנית לטבלאות Department ו-Medication.
-![INSERT ידני](שלב_א/screenshots/insert_manual.png)
+### שיטה 1 — ייבוא CSV
+יובאו נתונים לטבלת Department מקובץ CSV בעזרת פקודת \copy.
+הקובץ נמצא בתיקיית DataImportFiles.
+![CSV Import](שלב_א/screenshots/insert_csv.png)
 
 ### שיטה 2 — סקריפט Python
 נכתב סקריפט Python שייצר 20,000 רשומות לטבלאות Patient ו-Appointment.
+הקוד נמצא בתיקיית Programing.
 ![Python Script](שלב_א/screenshots/insert_python.png)
 
 ### שיטה 3 — Mockaroo
 הוכנסו נתונים דרך האתר mockaroo.com לטבלאות Nurse, Visit, Prescription, MedicalTest, InsurancePolicy.
+הקבצים נמצאים בתיקיית mockarooFiles.
 ![Mockaroo](שלב_א/screenshots/insert_mockaroo.png)
 
 ---
