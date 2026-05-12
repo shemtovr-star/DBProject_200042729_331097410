@@ -2,8 +2,9 @@
 
 ## שער
 **מגישים:** Roy Shem Tov (200042729) | Ori Winograd (331097410)
-**שם המערכת:** MediFlow — מערכת ניהול קליניקה רפואית
-**תאריך הגשה:** 13/04/2026
+**שם המערכת:** clinic_db — מערכת ניהול קליניקה רפואית
+**תאריך הגשה שלב א':** 13/04/2026
+**תאריך הגשה שלב ב':** 12/05/2026
 
 ---
 
@@ -15,12 +16,13 @@
 5. החלטות עיצוב
 6. שיטות הכנסת נתונים
 7. גיבוי ושחזור
+8. **דוח שלב ב': שאילתות, אילוצים ואינדקסים**
 
 ---
 
 ## 1. מבוא
 
-מערכת MediFlow היא מערכת ניהול קליניקה רפואית המאפשרת ניהול מטופלים, תורים, רופאים ורשומות רפואיות.
+מערכת clinic_db היא מערכת ניהול קליניקה רפואית המאפשרת ניהול מטופלים, תורים, רופאים ורשומות רפואיות.
 
 **הנתונים הנשמרים במערכת:**
 - פרטי מטופלים (שם, תאריך לידה, טלפון, כתובת, ביטוח)
@@ -113,148 +115,596 @@
 שם קובץ הגיבוי: `backup_13_04_2026.backup`
 ![גיבוי](שלב_א/screenshots/backup.png)
 
+---
 
-## דוח הפרויקט - שלב ב': שאילתות ואילוצים
+# 8. דוח שלב ב': שאילתות, אילוצים ואינדקסים
 
-### חלק 1: 4 שאילתות SELECT כפולות והשוואת יעילות
+## הקדמה
+בשלב זה ביצענו תשאול מקיף של בסיס הנתונים, כולל 8 שאילתות SELECT מורכבות, 3 שאילתות UPDATE, 3 שאילתות DELETE, הדגמות ROLLBACK ו-COMMIT, הוספת 3 אילוצים חדשים והוספת 3 אינדקסים לשיפור ביצועים.
 
-**שאילתה 1: מטופלים עם תורים עתידיים לקרדיולוגיה**
-* **תיאור:** השאילתה מציגה את פרטי המטופלים שיש להם תור עתידי למחלקת קרדיולוגיה, תוך חילוץ חודש התור. מתאימה למסך ניהול התורים.
-* **קוד השאילתה (דרך א' היעילה - JOIN):**
-<img width="1084" height="681" alt="צילום מסך 2026-05-06 153150" src="https://github.com/user-attachments/assets/c1fa5ecc-cb01-40f0-922b-d6d59247fefd" />
-
-  
-* **הסבר על הבדלי היעילות:** דרך א' משתמשת ב-INNER JOIN, שמבוצעת על ידי מנוע ה-DB בצורה יעילה (סריקה וחיבור). דרך ב' משתמשת בתת-שאילתות מקוננות ב-IN, שלרוב דורשות יותר משאבים וסריקות חוזרות, ולכן ה-JOIN יעיל ומומלץ יותר.
-<img width="917" height="522" alt="צילום מסך 2026-05-06 153250" src="https://github.com/user-attachments/assets/1cac96db-274e-4908-848e-536bb66aae10" />
-<img width="1096" height="688" alt="צילום מסך 2026-05-06 153208" src="https://github.com/user-attachments/assets/b8278454-93b3-4f0a-b01c-4d5edf23366a" />
-
-
-**שאילתה 2: כמות ביקורים בשנה הנוכחית לרופא**
-* **תיאור:** ספירה ודירוג של רופאים לפי כמות הביקורים שלהם בשנה הנוכחית. מתאים למסך הצגת עומס רופאים.
-* **קוד השאילתה (דרך א' היעילה - GROUP BY):**
-  <img width="1092" height="686" alt="צילום מסך 2026-05-06 152837" src="https://github.com/user-attachments/assets/eeef7f38-29f0-4b28-93c4-5291316f36f7" />
-
-* **הסבר על הבדלי היעילות:** דרך א' מבוססת על קיבוץ (GROUP BY) ורצה על כל הטבלה בבת אחת. דרך ב' משתמשת בתת-שאילתה מקורלצת (Correlated Subquery) ב-SELECT, שמאלצת את השרת להריץ ספירה מחדש עבור כל שורת רופא, ולכן אטית משמעותית.
-<img width="1088" height="685" alt="צילום מסך 2026-05-06 152901" src="https://github.com/user-attachments/assets/2fe469cf-79b3-48dd-aff9-b3cd66cb5511" />
-
-**שאילתה 3: ביטוחים שפגים בחודש הבא**
-* **תיאור:** איתור מטופלים שפוליסת הביטוח שלהם מסתיימת בחודש הבא (להוצאת התראה למטופל).
-* **קוד השאילתה (דרך א' היעילה - EXISTS):**
-  <img width="917" height="522" alt="צילום מסך 2026-05-06 153250" src="https://github.com/user-attachments/assets/808436f3-85a4-4d7b-8360-c9a53cfda930" />
-
-* **הסבר על הבדלי היעילות:** שימוש ב-EXISTS עוצר את הסריקה ברגע שנמצאת התאמה ראשונה למטופל (Short-circuit). שימוש ב-JOIN רגיל (דרך ב') סורק הכל ועלול להכפיל שורות למטופל עם מספר פוליסות, מה שמייקר את העיבוד.
-<img width="911" height="531" alt="צילום מסך 2026-05-06 153307" src="https://github.com/user-attachments/assets/49c1cb60-e46a-4d20-bf79-3edc6bc02b39" />
-
-**שאילתה 4: תרופות שניתנו מעל ל-10 פעמים**
-* **תיאור:** מציאת התרופות הנפוצות ביותר שניתנו במרשמים במרפאה.
-* **קוד השאילתה (דרך א' היעילה - HAVING):**
-  <img width="958" height="680" alt="צילום מסך 2026-05-06 153325" src="https://github.com/user-attachments/assets/e8ab440d-8767-4667-9396-97f03572249b" />
-
-* **הסבר על הבדלי היעילות:** דרך א' רצה בסריקה אחת ומסננת מיד בעזרת HAVING. דרך ב' משתמשת ב-CTE (פקודת WITH) ליצירת טבלה זמנית, שבמסדי נתונים גדולים גורמת לכתיבה לדיסק ומאטה את השאילתה.
-
----<img width="1009" height="689" alt="צילום מסך 2026-05-06 155354" src="https://github.com/user-attachments/assets/35302085-a372-4544-a027-6a0297a0d7f7" />
-
-
-### חלק 2: 4 שאילתות SELECT נוספות
-
-**שאילתה 5: היסטוריה רפואית למטופל (לפי מסך 4)**
-* **תיאור:** שליפת תיק רפואי מלא למטופל ספציפי הכולל ביקורים, אבחנות ותרופות.
-<img width="1070" height="542" alt="צילום מסך 2026-05-06 155422" src="https://github.com/user-attachments/assets/9a53f4fe-aef6-4bf9-add1-1e708221db8d" />
-
-
-**שאילתה 6: בדיקות רפואיות למטופלים מעל גיל 60**
-* **תיאור:** שליפת היסטוריית בדיקות רפואיות למטופלים מבוגרים, תוך חישוב גילם המדויק באמצעות פונקציית AGE.
-<img width="1094" height="683" alt="צילום מסך 2026-05-06 155546" src="https://github.com/user-attachments/assets/72edb4f0-f66a-4985-bca7-b991f1fbd661" />
-
-**שאילתה 7: כמות התורים שבוטלו לפי מחלקה**
-* **תיאור:** דוח המציג אילו מחלקות סובלות מהכי הרבה ביטולי תורים.
-  <img width="1089" height="686" alt="צילום מסך 2026-05-06 155632" src="https://github.com/user-attachments/assets/2d77eb8a-5949-46d7-8c93-93bcf02ca50b" />
-
-
-**שאילתה 8: ותק אחיות**
-* **תיאור:** רשימת האחיות שהחלו לעבוד לפני שנת 2020 וחישוב שנות הוותק שלהן.
-  <img width="1085" height="684" alt="צילום מסך 2026-05-06 155705" src="https://github.com/user-attachments/assets/72fec508-2d19-479f-b323-698a2e255485" />
-
+**שינויים בטבלאות:** במהלך השלב נדרשו הוספות עמודות (ALTER TABLE) כדי לתמוך בשאילתות. השינויים תועדו בקובץ AlterTables.sql.
 
 ---
 
-### חלק 3: שאילתות UPDATE
+## חלק 1: 4 שאילתות SELECT כפולות (השוואת יעילות)
 
-**1. עדכון סטטוס תורים שעבר זמנם**
-* **תיאור:** הפיכת תורים שנקבעו לעבר לסטטוס 'completed'.
-* **מצב הטבלה לפני העדכון:**
-<img width="825" height="521" alt="צילום מסך 2026-05-06 160516" src="https://github.com/user-attachments/assets/0afe8ab0-16f0-4e80-a041-665c83209423" />
+### שאילתה 1: מטופלים עם תורים עתידיים לקרדיולוגיה
 
-* **מצב הטבלה אחרי העדכון:**
-<img width="882" height="514" alt="צילום מסך 2026-05-06 160559" src="https://github.com/user-attachments/assets/383b1512-fa92-4d04-8ffb-867db76649d3" />
+**תיאור:** השאילתה מציגה את פרטי המטופלים שיש להם תור עתידי במחלקת קרדיולוגיה, כולל פירוק תאריך לחודש. שאילתה זו תופיע במסך ניהול תורים, לסינון מטופלים לפי מחלקה ותאריך.
 
-**2. העלאת סכום כיסוי ביטוחי**
-* **תיאור:** העלאת סכום הביטוח ב-10% לפוליסות של חברת Harel שמסתיימות בשנה הבאה.
-* **מצב הטבלה לפני העדכון:**
- <img width="959" height="559" alt="צילום מסך 2026-05-06 160616" src="https://github.com/user-attachments/assets/684d21b6-c569-4bdd-8c42-ce5902195e9b" />
+**דרך א' — INNER JOIN (היעילה):**
+```sql
+SELECT p.first_name, p.last_name, p.phone, a.appointment_date, 
+       EXTRACT(MONTH FROM a.appointment_date) as appt_month
+FROM Patient p
+INNER JOIN Appointment a ON p.patient_id = a.patient_id
+INNER JOIN Doctor d ON a.doctor_id = d.doctor_id
+INNER JOIN Department dep ON d.department_id = dep.department_id
+WHERE dep.name = 'Cardiology' AND a.appointment_date > CURRENT_DATE;
+```
 
-* **מצב הטבלה אחרי העדכון:**
-<img width="916" height="524" alt="צילום מסך 2026-05-06 160634" src="https://github.com/user-attachments/assets/cda39e1a-c1fa-43bb-a316-ddcda685a0b9" />
+**צילום הרצה ותוצאה:**
+![שאילתה 1 - דרך א'](שלב_ב/screenshots/query1_method_a.png)
 
-**3. הנחה על משככי כאבים**
-* **תיאור:** הפחתת מחיר של 5% לכל התרופות מסוג 'Painkiller'.
-* **מצב הטבלה לפני העדכון:**
- <img width="877" height="606" alt="צילום מסך 2026-05-06 160651" src="https://github.com/user-attachments/assets/8001860f-4a1c-44c0-824b-8d458737c1d3" />
+**דרך ב' — תת-שאילתות מקוננות:**
+```sql
+SELECT p.first_name, p.last_name, p.phone, a.appointment_date,
+       EXTRACT(MONTH FROM a.appointment_date) as appt_month
+FROM Patient p, Appointment a
+WHERE p.patient_id = a.patient_id
+  AND a.appointment_date > CURRENT_DATE
+  AND a.doctor_id IN (
+      SELECT doctor_id FROM Doctor WHERE department_id IN (
+          SELECT department_id FROM Department WHERE name = 'Cardiology'
+      )
+  );
+```
 
-* **מצב הטבלה אחרי העדכון:**<img width="830" height="471" alt="צילום מסך 2026-05-06 160702" src="https://github.com/user-attachments/assets/72ed5095-bb61-4003-91b3-b2f7b60cc5e7" />
+**צילום הרצה ותוצאה:**
+![שאילתה 1 - דרך ב'](שלב_ב/screenshots/query1_method_b.png)
 
-
----
-
-### חלק 4: שאילתות DELETE
-
-**1. מחיקת תורים מבוטלים ישנים**
-* **תיאור:** מחיקת תורים שבוטלו והתקיימו לפני יותר מ-3 שנים.
-* **מצב הטבלה לפני העדכון:**
-<img width="1089" height="561" alt="צילום מסך 2026-05-06 160725" src="https://github.com/user-attachments/assets/54581fa0-7b38-4a4d-8503-8c7d664f32cb" />
-
-
-* **מצב הטבלה אחרי העדכון:**
-<img width="787" height="487" alt="צילום מסך 2026-05-06 160739" src="https://github.com/user-attachments/assets/da651d08-b1f6-42d2-8a1e-b92e23d5a00c" />
-
-**2. מחיקת מרשמים פגומים**
-* **תיאור:** מחיקת מרשמים ללא משך טיפול או ללא מינון מוגדר.
-* **מצב הטבלה לפני העדכון:**
-
-<img width="929" height="542" alt="צילום מסך 2026-05-06 160751" src="https://github.com/user-attachments/assets/b687657c-b4e0-4d24-b364-30cbcb53a573" />
-
-* **מצב הטבלה אחרי העדכון:**
-<img width="806" height="478" alt="צילום מסך 2026-05-06 160803" src="https://github.com/user-attachments/assets/d4d1c047-f12f-47b6-8c47-81d9734ee044" />
-
-**3. מחיקת בדיקות רפואיות ללא תוצאות**
-* **תיאור:** מחיקת בדיקות שבוצעו לפני יותר מחצי שנה ולא הוזנו להן תוצאות (NULL).
-* **מצב הטבלה לפני העדכון:**
-<img width="829" height="539" alt="צילום מסך 2026-05-06 160817" src="https://github.com/user-attachments/assets/04ea7cb7-0087-40bf-8eec-7ff7716da05b" />
-
-* **מצב הטבלה אחרי העדכון:**
-<img width="885" height="450" alt="צילום מסך 2026-05-06 160828" src="https://github.com/user-attachments/assets/e8e92e0d-fa4e-4007-a376-d232584bc32d" />
+**הסבר ההבדל ביעילות:**
+- **דרך א' (JOIN):** רצה בזמן של 658 מילישניות. ה-INNER JOIN מבצע חיבור יעיל בין הטבלאות תוך שימוש באלגוריתמים מוטבים של ה-DB (Hash Join או Merge Join).
+- **דרך ב' (תת-שאילתות):** רצה בזמן של 1036 מילישניות. ה-DB צריך להעריך 3 תת-שאילתות מקוננות, מה שמחייב סריקות נוספות. אופטימייזר מודרני אולי יתרגם זאת ל-JOIN פנימית, אך לעיתים זה גורר תקורה נוספת.
+- **JOIN יעיל יותר בכ-40%.**
 
 ---
 
-### חלק 5: טרנזקציות (Rollback & Commit)
+### שאילתה 2: רשימת רופאים וכמות ביקורים בשנה הנוכחית
 
-**דוגמת ROLLBACK:**
-* **מצב התחלתי:**
- <img width="779" height="555" alt="צילום מסך 2026-05-06 160944" src="https://github.com/user-attachments/assets/e0502249-59ae-439c-b5ae-ba1ad6564c52" />
+**תיאור:** סטטיסטיקה של מספר הביקורים לכל רופא בשנה הנוכחית. השאילתה תופיע במסך סטטיסטיקות הקליניקה.
 
-* **ביצוע הפקודות:** ביצוע BEGIN, לאחר מכן UPDATE (עדכון שגוי להתמחות הרופא), ולאחר מכן ביצוע ROLLBACK כדי להתחרט.
-* **מצב לאחר הטרנזקציה:**
- <img width="851" height="535" alt="צילום מסך 2026-05-06 160958" src="https://github.com/user-attachments/assets/8fb7fe9a-7875-4114-9637-9912bc17a46c" />
+**דרך א' — JOIN + GROUP BY (היעילה):**
+```sql
+SELECT d.first_name, d.last_name, dep.name AS department, COUNT(v.visit_id) as total_visits
+FROM Doctor d
+INNER JOIN Department dep ON d.department_id = dep.department_id
+LEFT JOIN Visit v ON d.doctor_id = v.doctor_id 
+  AND EXTRACT(YEAR FROM v.visit_date) = EXTRACT(YEAR FROM CURRENT_DATE)
+GROUP BY d.doctor_id, d.first_name, d.last_name, dep.name
+ORDER BY total_visits DESC;
+```
+
+**צילום הרצה ותוצאה:**
+![שאילתה 2 - דרך א'](שלב_ב/screenshots/query2_method_a.png)
+
+**דרך ב' — Correlated Subquery:**
+```sql
+SELECT d.first_name, d.last_name, 
+       (SELECT name FROM Department WHERE department_id = d.department_id) AS department,
+       (SELECT COUNT(*) FROM Visit v 
+        WHERE v.doctor_id = d.doctor_id 
+          AND EXTRACT(YEAR FROM v.visit_date) = EXTRACT(YEAR FROM CURRENT_DATE)
+       ) as total_visits
+FROM Doctor d
+ORDER BY total_visits DESC;
+```
+
+**צילום הרצה ותוצאה:**
+![שאילתה 2 - דרך ב'](שלב_ב/screenshots/query2_method_b.png)
+
+**הסבר ההבדל ביעילות:**
+- **דרך א' (JOIN + GROUP BY):** רצה בזמן של 895 מילישניות. ה-DB מבצע GROUP BY פעם אחת על הטבלה המאוחדת.
+- **דרך ב' (Correlated Subquery):** איטית משמעותית — לכל שורה ב-Doctor, ה-DB מבצע 2 תת-שאילתות נפרדות. אם יש 100 רופאים, זה מסתכם ב-200 תת-שאילתות.
+- **JOIN יעיל יותר בעיקר ככל שמספר הרופאים גדל.**
 
 ---
 
-### חלק 6: אילוצים (Constraints)
+### שאילתה 3: מטופלים עם פוליסות ביטוח שפג תוקפן ב-2026
 
-<img width="1084" height="490" alt="צילום מסך 2026-05-06 161115" src="https://github.com/user-attachments/assets/381780cb-fb69-40b3-af6d-7de4aaa17426" />
+**תיאור:** איתור מטופלים שפוליסת הביטוח שלהם פגה השנה (להתראה למטופל). השאילתה תופיע במסך ניהול ביטוחים.
 
+**דרך א' — EXISTS:**
+```sql
+SELECT p.patient_id, p.first_name, p.last_name, p.email, p.phone
+FROM Patient p
+WHERE EXISTS (
+    SELECT 1 
+    FROM InsurancePolicy ip 
+    WHERE ip.patient_id = p.patient_id 
+      AND EXTRACT(YEAR FROM ip.expiry_date) = 2026
+);
+```
+
+**צילום הרצה ותוצאה:**
+![שאילתה 3 - דרך א'](שלב_ב/screenshots/query3_method_a.png)
+
+**דרך ב' — INNER JOIN עם DISTINCT:**
+```sql
+SELECT DISTINCT p.patient_id, p.first_name, p.last_name, p.email, p.phone
+FROM Patient p
+INNER JOIN InsurancePolicy ip ON p.patient_id = ip.patient_id
+WHERE EXTRACT(YEAR FROM ip.expiry_date) = 2026;
+```
+
+**צילום הרצה ותוצאה:**
+![שאילתה 3 - דרך ב'](שלב_ב/screenshots/query3_method_b.png)
+
+**הסבר ההבדל ביעילות:**
+- **דרך א' (EXISTS):** עוצרת את הסריקה ברגע שמצאה התאמה ראשונה למטופל (Short-circuit evaluation).
+- **דרך ב' (JOIN + DISTINCT):** מבצעת חיבור מלא של הטבלאות ואז מסירה כפילויות. ה-DISTINCT מוסיף שלב של מיון או הצבה.
+- **EXISTS יעיל יותר כשמטופל יכול להופיע במספר פוליסות**, כי הוא לא יוצר שורות מיותרות שצריך לסנן.
 
 ---
 
-### חלק 7: אינדקסים
+### שאילתה 4: תרופות שנרשמו במרשמים יותר מ-10 פעמים
 
-<img width="1005" height="830" alt="צילום מסך 2026-05-06 161414" src="https://github.com/user-attachments/assets/c1aebbe3-ccc2-4800-98aa-3dffcca19549" />
+**תיאור:** מציאת התרופות הנפוצות במרפאה. השאילתה תופיע בדוח התרופות המנוהלות.
+
+**דרך א' — GROUP BY + HAVING (היעילה):**
+```sql
+SELECT m.name, m.manufacturer, m.type, COUNT(p.prescription_id) as times_prescribed
+FROM Medication m
+INNER JOIN Prescription p ON m.medication_id = p.medication_id
+GROUP BY m.medication_id, m.name, m.manufacturer, m.type
+HAVING COUNT(p.prescription_id) > 10;
+```
+
+**צילום הרצה ותוצאה:**
+![שאילתה 4 - דרך א'](שלב_ב/screenshots/query4_method_a.png)
+
+**דרך ב' — CTE (Common Table Expression):**
+```sql
+WITH PrescriptionCounts AS (
+    SELECT medication_id, COUNT(*) as p_count
+    FROM Prescription
+    GROUP BY medication_id
+)
+SELECT m.name, m.manufacturer, m.type, pc.p_count as times_prescribed
+FROM Medication m
+INNER JOIN PrescriptionCounts pc ON m.medication_id = pc.medication_id
+WHERE pc.p_count > 10;
+```
+
+**צילום הרצה ותוצאה:**
+![שאילתה 4 - דרך ב'](שלב_ב/screenshots/query4_method_b.png)
+
+**הסבר ההבדל ביעילות:**
+- **שתי הדרכים מחזירות אותן 10 תרופות בדיוק.**
+- **GROUP BY + HAVING (דרך א'):** מבוצע בשלב אחד בתוך תכנון השאילתה.
+- **CTE (דרך ב'):** הטבלה הזמנית נוצרת תחילה, ואז משולבת. אופטימייזר מודרני של PostgreSQL מאופטם CTE ולכן ההבדל בביצועים מינימלי במקרה זה.
+- **CTE עדיף בקריאות לשאילתות מורכבות, אך GROUP BY ישיר מנצח בסיטואציות פשוטות.**
+
+---
+
+## חלק 2: 4 שאילתות SELECT נוספות
+
+### שאילתה 5: היסטוריה רפואית מלאה למטופל
+
+**תיאור:** שליפת תיק רפואי מלא של מטופל ספציפי (כולל ביקורים, אבחנות, רופאים ומרשמים). תופיע במסך תיק רפואי של מטופל.
+
+```sql
+SELECT p.first_name || ' ' || p.last_name AS patient_name, 
+       v.visit_date, EXTRACT(YEAR FROM v.visit_date) as visit_year, 
+       v.diagnosis, d.last_name AS doctor_name, m.name AS medication_prescribed
+FROM Patient p
+INNER JOIN Visit v ON p.patient_id = v.patient_id
+INNER JOIN Doctor d ON v.doctor_id = d.doctor_id
+LEFT JOIN Prescription pr ON v.visit_id = pr.visit_id
+LEFT JOIN Medication m ON pr.medication_id = m.medication_id
+WHERE p.patient_id = 4905 
+ORDER BY v.visit_date DESC;
+```
+
+**צילום הרצה ותוצאה:**
+![שאילתה 5 - היסטוריה רפואית](שלב_ב/screenshots/query5_history.png)
+
+---
+
+### שאילתה 6: בדיקות רפואיות למטופלים מעל גיל 60
+
+**תיאור:** שליפת בדיקות עבור מטופלים מבוגרים. תופיע במסך דוחות לאוכלוסיות יעד.
+
+```sql
+SELECT mt.test_date, mt.test_type, mt.result, p.first_name, p.last_name, 
+       EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date)) AS age
+FROM MedicalTest mt
+INNER JOIN Patient p ON mt.patient_id = p.patient_id
+WHERE EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date)) > 60
+ORDER BY mt.test_date DESC;
+```
+
+**צילום הרצה ותוצאה:**
+![שאילתה 6 - בדיקות לקשישים](שלב_ב/screenshots/query6_seniors.png)
+
+---
+
+### שאילתה 7: כמות תורים שבוטלו לפי מחלקה וקומה
+
+**תיאור:** דוח המציג אילו מחלקות סובלות מהכי הרבה ביטולי תורים, כולל קומה. תופיע במסך סטטיסטיקות.
+
+```sql
+SELECT dep.name AS department_name, 
+       dep.floor AS department_floor,
+       COUNT(a.appointment_id) AS cancelled_appointments
+FROM Appointment a
+INNER JOIN Doctor d ON a.doctor_id = d.doctor_id
+INNER JOIN Department dep ON d.department_id = dep.department_id
+WHERE a.status = 'cancelled'
+GROUP BY dep.name, dep.floor
+ORDER BY cancelled_appointments DESC;
+```
+
+**צילום הרצה ותוצאה:**
+![שאילתה 7 - ביטולים לפי מחלקה](שלב_ב/screenshots/query7_cancellations.png)
+
+---
+
+### שאילתה 8: אחיות ותיקות עם פרטי מחלקתן
+
+**תיאור:** רשימת האחיות שהחלו לעבוד לפני 2020, כולל המחלקה שלהן ושנות הוותק. תופיע במסך ניהול כוח אדם.
+
+```sql
+SELECT n.first_name, n.last_name, n.email, dep.name AS department_name, 
+       n.start_date, EXTRACT(YEAR FROM AGE(CURRENT_DATE, n.start_date)) as years_of_service
+FROM Nurse n
+INNER JOIN Department dep ON n.department_id = dep.department_id
+WHERE EXTRACT(YEAR FROM n.start_date) < 2020
+ORDER BY years_of_service DESC;
+```
+
+**צילום הרצה ותוצאה:**
+![שאילתה 8 - אחיות ותיקות](שלב_ב/screenshots/query8_nurses.png)
+
+---
+
+## חלק 3: שאילתות UPDATE
+
+### UPDATE 1: עדכון סטטוס תורים שעבר זמנם
+
+**תיאור:** הפיכת תורים שתאריכם עבר (status='scheduled' ולא נוכחו) לסטטוס 'completed' אוטומטית, עם תיוג בהערות.
+
+```sql
+UPDATE Appointment 
+SET status = 'completed', 
+    notes = COALESCE(notes, '') || ' (System updated)' 
+WHERE appointment_date < CURRENT_DATE 
+  AND status = 'scheduled';
+```
+
+**מצב לפני העדכון:**
+![UPDATE 1 - לפני](שלב_ב/screenshots/update1_before.png)
+
+**הרצת UPDATE — 5,720 שורות עודכנו:**
+![UPDATE 1 - הרצה](שלב_ב/screenshots/update1_execute.png)
+
+**מצב אחרי העדכון:**
+![UPDATE 1 - אחרי](שלב_ב/screenshots/update1_after.png)
+
+---
+
+### UPDATE 2: העלאת סכום הכיסוי הביטוחי ב-10% לפוליסות 2026
+
+**תיאור:** מתן הטבה למטופלים שפוליסת ביטוחם תפוג השנה - העלאה אוטומטית של 10% בכיסוי.
+
+```sql
+UPDATE InsurancePolicy 
+SET coverage_amount = coverage_amount * 1.10 
+WHERE EXTRACT(YEAR FROM expiry_date) = 2026;
+```
+
+**מצב לפני העדכון:**
+![UPDATE 2 - לפני](שלב_ב/screenshots/update2_before.png)
+
+**הרצת UPDATE — 8 שורות עודכנו:**
+![UPDATE 2 - הרצה](שלב_ב/screenshots/update2_execute.png)
+
+**מצב אחרי העדכון:** (סכומים גדלו ב-10%)
+![UPDATE 2 - אחרי](שלב_ב/screenshots/update2_after.png)
+
+---
+
+### UPDATE 3: הנחה של 5% על משככי כאבים
+
+**תיאור:** מבצע הנחה זמנית על משככי כאבים. הפחתת מחיר ב-5% לכל התרופות מסוג 'Painkiller'.
+
+```sql
+UPDATE Medication 
+SET price = price * 0.95 
+WHERE type = 'Painkiller';
+```
+
+**מצב לפני העדכון:** (Ibuprofen: 15.00, Paracetamol: 10.00)
+![UPDATE 3 - לפני](שלב_ב/screenshots/update3_before.png)
+
+**הרצת UPDATE — 2 שורות עודכנו:**
+![UPDATE 3 - הרצה](שלב_ב/screenshots/update3_execute.png)
+
+**מצב אחרי העדכון:** (Ibuprofen: 14.25, Paracetamol: 9.50)
+![UPDATE 3 - אחרי](שלב_ב/screenshots/update3_after.png)
+
+---
+
+## חלק 4: שאילתות DELETE
+
+### DELETE 1: מחיקת תורים מבוטלים ישנים
+
+**תיאור:** ניקוי תורים שבוטלו לפני 2024 כדי לשמור על הטבלה רזה.
+
+```sql
+DELETE FROM Appointment 
+WHERE status = 'cancelled' 
+  AND appointment_date < '2024-01-01';
+```
+
+**מצב לפני המחיקה — 1,657 שורות עומדות להימחק:**
+![DELETE 1 - לפני](שלב_ב/screenshots/delete1_before.png)
+
+**הרצת DELETE — 1,657 שורות נמחקו:**
+![DELETE 1 - הרצה](שלב_ב/screenshots/delete1_execute.png)
+
+**מצב אחרי המחיקה — 0 שורות נשארו:**
+![DELETE 1 - אחרי](שלב_ב/screenshots/delete1_after.png)
+
+---
+
+### DELETE 2: מחיקת מרשמים ישנים מאוד
+
+**תיאור:** ניקוי מרשמים שניתנו לפני 2013 - הם כבר לא רלוונטיים רפואית.
+
+```sql
+DELETE FROM Prescription 
+WHERE prescription_date < '2013-01-01';
+```
+
+**מצב לפני המחיקה — 177 שורות עומדות להימחק:**
+![DELETE 2 - לפני](שלב_ב/screenshots/delete2_before.png)
+
+**הרצת DELETE — 177 שורות נמחקו:**
+![DELETE 2 - הרצה](שלב_ב/screenshots/delete2_execute.png)
+
+**מצב אחרי המחיקה — 0 שורות נשארו:**
+![DELETE 2 - אחרי](שלב_ב/screenshots/delete2_after.png)
+
+---
+
+### DELETE 3: מחיקת בדיקות רפואיות ישנות
+
+**תיאור:** ניקוי בדיקות רפואיות מלפני 2015 - מעבר לתקופת השמירה הנדרשת.
+
+```sql
+DELETE FROM MedicalTest 
+WHERE test_date < '2015-01-01';
+```
+
+**מצב לפני המחיקה — 332 שורות עומדות להימחק:**
+![DELETE 3 - לפני](שלב_ב/screenshots/delete3_before.png)
+
+**הרצת DELETE — 332 שורות נמחקו:**
+![DELETE 3 - הרצה](שלב_ב/screenshots/delete3_execute.png)
+
+**מצב אחרי המחיקה — 0 שורות נשארו:**
+![DELETE 3 - אחרי](שלב_ב/screenshots/delete3_after.png)
+
+---
+
+## חלק 5: ROLLBACK ו-COMMIT
+
+### דוגמת ROLLBACK
+הדגמה של ביטול שינוי בעזרת ROLLBACK. נשנה בטעות התמחות רופא מספר 1, ונבטל את השינוי.
+
+```sql
+-- מצב 1: לפני השינוי
+SELECT doctor_id, specialization FROM Doctor WHERE doctor_id = 1;
+
+BEGIN;
+-- שינוי בטעות
+UPDATE Doctor SET specialization = 'Unknown' WHERE doctor_id = 1;
+
+-- מצב 2: השינוי קרה בתוך הטרנזקציה
+SELECT doctor_id, specialization FROM Doctor WHERE doctor_id = 1;
+
+ROLLBACK;
+-- מצב 3: הטרנזקציה בוטלה, הנתונים חזרו
+SELECT doctor_id, specialization FROM Doctor WHERE doctor_id = 1;
+```
+
+**מצב 1 — לפני (specialization = Gynecology):**
+![ROLLBACK - מצב 1](שלב_ב/screenshots/rollback_state1_before.png)
+
+**מצב 2 — אחרי UPDATE בתוך הטרנזקציה (specialization = Unknown):**
+![ROLLBACK - מצב 2](שלב_ב/screenshots/rollback_state2_during.png)
+
+**מצב 3 — אחרי ROLLBACK (specialization חזר ל-Gynecology):**
+![ROLLBACK - מצב 3](שלב_ב/screenshots/rollback_state3_after.png)
+
+---
+
+### דוגמת COMMIT
+הדגמה של שמירת שינוי לתמיד בעזרת COMMIT. נבטל תור מספר 20003.
+
+```sql
+-- מצב 1: לפני השינוי
+SELECT appointment_id, status FROM Appointment WHERE appointment_id = 20003;
+
+BEGIN;
+-- שינוי
+UPDATE Appointment SET status = 'cancelled' WHERE appointment_id = 20003;
+
+-- מצב 2: השינוי קרה בתוך הטרנזקציה
+SELECT appointment_id, status FROM Appointment WHERE appointment_id = 20003;
+
+COMMIT;
+-- מצב 3: השינוי נשמר לתמיד
+SELECT appointment_id, status FROM Appointment WHERE appointment_id = 20003;
+```
+
+**מצב 1 — לפני (status = scheduled):**
+![COMMIT - מצב 1](שלב_ב/screenshots/commit_state1_before.png)
+
+**מצב 2 — אחרי UPDATE בתוך הטרנזקציה (status = cancelled):**
+![COMMIT - מצב 2](שלב_ב/screenshots/commit_state2_during.png)
+
+**מצב 3 — אחרי COMMIT (status נשמר כ-cancelled):**
+![COMMIT - מצב 3](שלב_ב/screenshots/commit_state3_after.png)
+
+---
+
+## חלק 6: אילוצים חדשים (Constraints)
+
+הוספנו 3 אילוצי CHECK חדשים, כל אחד אוכף תקינות נתונים שונה. עבור כל אילוץ, ניסינו להפר אותו ב-INSERT/UPDATE מכוון, וראינו ש-PostgreSQL חוסם את הפעולה עם שגיאת constraint violation.
+
+### אילוץ 1: תאריך לידה לא יכול להיות בעתיד
+
+**מוטיבציה:** אדם לא יכול להיוולד בעתיד. ללא אילוץ, נתונים שגויים יכולים לחדור למערכת.
+
+**תועלת:** מבטיח שכל מטופל במערכת קיים פיזית כיום.
+
+```sql
+ALTER TABLE Patient DROP CONSTRAINT IF EXISTS chk_patient_birth_date;
+ALTER TABLE Patient ADD CONSTRAINT chk_patient_birth_date 
+    CHECK (birth_date <= CURRENT_DATE);
+```
+
+**ניסיון הפרה — שגיאה כצפוי:**
+```sql
+INSERT INTO Patient (first_name, last_name, birth_date) 
+VALUES ('Future', 'Person', '2050-01-01');
+```
+
+![אילוץ 1](שלב_ב/screenshots/constraint1_check.png)
+
+---
+
+### אילוץ 2: שעת תור חייבת להיות בין 08:00 ל-20:00
+
+**מוטיבציה:** הקליניקה פועלת בשעות מוגדרות. תורים מחוץ לשעות פעילות אינם תקפים.
+
+**תועלת:** מונע יצירת תורים שגויים בלילה או מוקדם בבוקר.
+
+```sql
+ALTER TABLE Appointment DROP CONSTRAINT IF EXISTS chk_appointment_time;
+ALTER TABLE Appointment ADD CONSTRAINT chk_appointment_time 
+    CHECK (appointment_time >= '08:00:00' AND appointment_time <= '20:00:00');
+```
+
+**ניסיון הפרה — שגיאה כצפוי:**
+```sql
+INSERT INTO Appointment (appointment_date, appointment_time, status, patient_id, doctor_id) 
+VALUES ('2026-12-01', '23:00:00', 'scheduled', 1, 1);
+```
+
+![אילוץ 2](שלב_ב/screenshots/constraint2_check.png)
+
+---
+
+### אילוץ 3: מחיר תרופה חייב להיות חיובי
+
+**מוטיבציה:** מחירים שליליים אינם הגיוניים מבחינה עסקית.
+
+**תועלת:** מונע טעויות הזנה ושגיאות חישוב כספיות.
+
+```sql
+ALTER TABLE Medication DROP CONSTRAINT IF EXISTS chk_medication_price;
+ALTER TABLE Medication ADD CONSTRAINT chk_medication_price 
+    CHECK (price >= 0);
+```
+
+**ניסיון הפרה — שגיאה כצפוי:**
+```sql
+UPDATE Medication SET price = -100 WHERE medication_id = 1;
+```
+
+![אילוץ 3](שלב_ב/screenshots/constraint3_check.png)
+
+---
+
+## חלק 7: אינדקסים (Indexes)
+
+הוספנו 3 אינדקסים על עמודות שמשמשות בשאילתות תכופות. עבור כל אינדקס מדדנו את זמן הביצוע לפני ואחרי בעזרת `EXPLAIN ANALYZE`.
+
+### אינדקס 1: idx_patient_name
+
+**מוטיבציה:** חיפושים בשם המטופל (last_name + first_name) הם מאוד נפוצים — בכל פנייה של מטופל לקבלה צריך לחפש אותו לפי השם.
+
+**תועלת:** האצת חיפושים בטבלת Patient (20,000 רשומות).
+
+```sql
+DROP INDEX IF EXISTS idx_patient_name;
+CREATE INDEX idx_patient_name ON Patient(last_name, first_name);
+```
+
+**זמן ריצה לפני האינדקס — Seq Scan, 3.497ms:**
+![אינדקס 1 - לפני](שלב_ב/screenshots/index1_before.png)
+
+**זמן ריצה אחרי האינדקס — Bitmap Index Scan, 0.480ms:**
+![אינדקס 1 - אחרי](שלב_ב/screenshots/index1_after.png)
+
+**הסבר התוצאות:** 
+לפני האינדקס, PostgreSQL ביצע Seq Scan וסרק את כל 20,000 השורות בטבלה, מסיר 18,979 שורות לא תואמות. אחרי האינדקס, השימוש ב-Bitmap Index Scan מאפשר להגיע ישירות לרשומות התואמות. **שיפור של 7.3x מהיר יותר.**
+
+---
+
+### אינדקס 2: idx_appointment_date_doctor
+
+**מוטיבציה:** השאלה "אילו תורים יש לרופא X בתאריך Y" היא הבסיסית ביותר במערכת לוחות זמנים של קליניקה.
+
+**תועלת:** האצת חיפוש תורים ספציפיים בטבלת Appointment (20,000 רשומות).
+
+```sql
+DROP INDEX IF EXISTS idx_appointment_date_doctor;
+CREATE INDEX idx_appointment_date_doctor ON Appointment(appointment_date, doctor_id);
+```
+
+**זמן ריצה לפני האינדקס — Seq Scan, 1.363ms:**
+![אינדקס 2 - לפני](שלב_ב/screenshots/index2_before.png)
+
+**זמן ריצה אחרי האינדקס — Index Scan, 0.031ms:**
+![אינדקס 2 - אחרי](שלב_ב/screenshots/index2_after.png)
+
+**הסבר התוצאות:**
+לפני האינדקס, PostgreSQL ביצע Seq Scan וסרק 20,000 שורות. אחרי האינדקס, ה-Index Scan מאפשר לקפוץ ישירות לשורה הרצויה. **שיפור של 44x מהיר יותר** — זה השיפור הדרמטי ביותר משלושת האינדקסים, כי מדובר בטבלה גדולה עם תנאי מאוד ספציפי.
+
+---
+
+### אינדקס 3: idx_insurance_expiry
+
+**מוטיבציה:** בדיקת פוליסות שעומדות לפוג היא פעולה חיונית למחלקת ביטוח.
+
+**תועלת:** האצת שאילתות על טווחי תאריכים בטבלת InsurancePolicy.
+
+```sql
+DROP INDEX IF EXISTS idx_insurance_expiry;
+CREATE INDEX idx_insurance_expiry ON InsurancePolicy(expiry_date);
+```
+
+**זמן ריצה לפני האינדקס — Seq Scan, 0.191ms:**
+![אינדקס 3 - לפני](שלב_ב/screenshots/index3_before.png)
+
+**זמן ריצה אחרי האינדקס — Bitmap Index Scan, 0.036ms:**
+![אינדקס 3 - אחרי](שלב_ב/screenshots/index3_after.png)
+
+**הסבר התוצאות:**
+לפני האינדקס, PostgreSQL סרק 500 שורות. אחרי האינדקס, הוא משתמש ב-Bitmap Index Scan עם 2 גישות בלבד. **שיפור של 5.3x מהיר יותר**. השיפור פחות דרמטי כי הטבלה קטנה יחסית, אבל עדיין משמעותי.
+
+---
+
+## סיכום ביצועי האינדקסים
+
+| אינדקס | זמן לפני | זמן אחרי | שיפור |
+|---------|----------|-----------|--------|
+| idx_patient_name | 3.497 ms | 0.480 ms | **7.3x** |
+| idx_appointment_date_doctor | 1.363 ms | 0.031 ms | **44x** |
+| idx_insurance_expiry | 0.191 ms | 0.036 ms | **5.3x** |
+
+ניתן לראות שאינדקסים על טבלאות גדולות (Patient, Appointment) נותנים שיפורים דרמטיים יותר מאשר על טבלאות קטנות (InsurancePolicy).
