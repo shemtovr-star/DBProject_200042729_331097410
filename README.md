@@ -708,3 +708,177 @@ CREATE INDEX idx_insurance_expiry ON InsurancePolicy(expiry_date);
 | idx_insurance_expiry | 0.191 ms | 0.036 ms | **5.3x** |
 
 ניתן לראות שאינדקסים על טבלאות גדולות (Patient, Appointment) נותנים שיפורים דרמטיים יותר מאשר על טבלאות קטנות (InsurancePolicy).
+
+---
+
+## שלב ג - אינטגרציה ומבטים
+
+### מבוא ותיאור תהליך ההנדסה לאחור (Reverse Engineering)
+קיבלנו את בסיס הנתונים של הצוות השותף העוסק ב"בניית מוסדות רפואה". על מנת להבין את מבנה הנתונים שלהם ולבצע אינטגרציה, ניתחנו את הטבלאות והאילוצים והפעלנו אלגוריתם הנדסה לאחור:
+1. **זיהוי ישויות חזקות:** טבלאות עצמאיות בעלות מפתח ראשי ייחודי כגון `medical_institution` ו-`project` הוגדרו כישויות מרכזיות.
+2. **זיהוי ירושה (IS-A):** זיהינו כי הטבלאות `finance_manager` ו-`project_manager` חולקות את אותו מפתח ראשי `member_id` המפנה לטבלת `staff_member`. לפיכך, הגדרנו מבנה ירושה שבו אנשי הצוות הם ישות אב ומנהלי הפרויקטים/כספים הם ישויות בן.
+3. **זיהוי ישויות חלשות וקשרי M:N:** טבלאות קשר מובהקות כמו `building_building_plan` הומרו בחזרה לקשרי רב-לרב מושגיים ב-ERD.
+
+#### תרשים ERD - מוסדות רפואה (הנדסה לאחור)
+```mermaid
+erDiagram
+    STAFF_MEMBER {
+        bigint member_id PK
+        string first_name
+        string last_name
+        date hire_date
+        numeric performance_score
+        string email
+    }
+    PROJECT_MANAGER {
+        bigint member_id PK_FK
+        integer prior_experience_years
+        string certification_level
+    }
+    FINANCE_MANAGER {
+        bigint member_id PK_FK
+        string education
+    }
+    MEDICAL_INSTITUTION {
+        bigint institution_id PK
+        string name
+        string address
+        string institution_type
+    }
+    PROJECT {
+        bigint project_id PK
+        string project_name
+        date planned_start_date
+        date target_end_date
+        integer priority_level
+    }
+    BUILDING {
+        bigint building_id PK
+        string building_name
+        string building_address
+        string construction_status
+    }
+    BUILDING_PLAN {
+        bigint plan_id PK
+        string title
+        text plan_description
+        date creation_date
+    }
+    CONTRACTOR {
+        bigint contractor_id PK
+        string company_name
+        string specialization
+        numeric rating
+    }
+
+    STAFF_MEMBER ||--|o PROJECT_MANAGER : "IS_A"
+    STAFF_MEMBER ||--|o FINANCE_MANAGER : "IS_A"
+    MEDICAL_INSTITUTION ||--o{ PROJECT : "hosts"
+    PROJECT ||--o{ BUILDING_PLAN : "contains"
+    BUILDING }o--o{ BUILDING_PLAN : "uses"
+    PROJECT }o--o{ CONTRACTOR : "executes_via_contract"
+    PROJECT }o--o{ PROJECT_MANAGER : "managed_by"
+    PROJECT }o--o{ FINANCE_MANAGER : "monitored_by"
+
+### החלטות עיצוב ותהליך האינטגרציה
+בשלב העיצוב המשותף, החלטנו על קשר לוגי ועסקי מובהק: קליניקת הטיפולים שלנו (מערכת א') פועלת פיזית בתוך המבנים והמוסדות הרפואיים שמקימה מחלקת הבינוי (מערכת ב'). 
+לצורך המימוש, קישרנו בקשר של 1:N בין טבלת המוסד הרפואי (`medical_institution`) לבין טבלת המחלקות בקליניקה (`Department`). 
+השינוי בוצע פיזית באמצעות פקודות `ALTER TABLE` בקובץ `Integrate.sql`, תוך שמירה על הנתונים הקיימים ואכלוסם בערכי ברירת מחדל תואמים כדי למנוע פגיעה באילוצי שלמות הישות (Integrity Constraints).
+
+#### תרשים ERD משולב ומערכת היחסים המשותפת
+```mermaid
+erDiagram
+    MEDICAL_INSTITUTION {
+        bigint institution_id PK
+        string name
+        string address
+    }
+    DEPARTMENT {
+        int department_id PK
+        string name
+        int floor
+        string phone
+    }
+    DOCTOR {
+        int doctor_id PK
+        string first_name
+        string last_name
+    }
+    PATIENT {
+        int patient_id PK
+        string first_name
+        string last_name
+    }
+    VISIT {
+        int visit_id PK
+        date visit_date
+        string diagnosis
+    }
+
+    MEDICAL_INSTITUTION ||--o{ DEPARTMENT : "hosts_physically"
+    DEPARTMENT ||--o{ DOCTOR : "employs"
+    DOCTOR ||--o{ VISIT : "conducts"
+    PATIENT ||--o{ VISIT : "undergoes"
+
+erDiagram
+    medical_institution {
+        bigint institution_id PK
+        varchar name
+        varchar address
+        varchar institution_type
+    }
+    Department {
+        int department_id PK
+        varchar name
+        int floor
+        varchar phone
+        bigint institution_id FK
+    }
+    Doctor {
+        int doctor_id PK
+        varchar first_name
+        varchar last_name
+        int department_id FK
+    }
+    Patient {
+        int patient_id PK
+        varchar first_name
+        varchar last_name
+    }
+    Visit {
+        int visit_id PK
+        date visit_date
+        int patient_id FK
+        int doctor_id FK
+    }
+
+    medical_institution ||--o{ Department : "FK: institution_id"
+    Department ||--o{ Doctor : "FK: department_id"
+    Patient ||--o{ Visit : "FK: patient_id"
+    Doctor ||--o{ Visit : "FK: doctor_id"
+
+תיאור המבטים (Views) ושליפת הנתונים
+מבט היסטוריית טיפולים בקליניקה (v_patient_visits_history): מבט המציג את נקודת המבט של הקליניקה המקורית שלנו. הוא מאחד נתוני מטופלים, ביקורים, אבחנות והרופאים המטפלים.
+
+שאילתות על המבט: שליפת היסטוריה מלאה ממוינת וסיכום ביקורים לכל רופא.
+
+צילום מסך - שאילתות מבט 1:
+<img width="1401" height="521" alt="צילום מסך 2026-05-18 154708" src="https://github.com/user-attachments/assets/0eef8604-1cae-4e06-b287-a42cc4790030" />
+
+
+
+מבט מעקב פרויקטים (v_project_progress): מבט המציג את נקודת המבט של מחלקת הבינוי שקיבלנו. משלב פרויקטים, המוסדות בהם הם מבוצעים ואת סטטוס אבני הדרך (Milestones) שלהם.
+
+שאילתות על המבט: סינון פרויקטים קרובים וסיכום סטטוס אבני דרך לפי מוסד.
+
+צילום מסך - שאילתות מבט 2:
+<img width="988" height="521" alt="צילום מסך 2026-05-18 154723" src="https://github.com/user-attachments/assets/b1120468-6474-4f23-82b5-a25d46e0575f" />
+
+
+המבט המשולב (v_institution_clinical_staff): מבט האינטגרציה המרכזי המציג את החיבור הפיזי בין העולמות: אילו מחלקות רפואיות ואילו רופאים פעילים פיזית בכל מוסד רפואי שהוקם.
+
+שאילתות על המבט: פריסת כוח אדם רופאי במוסדות ומיפוי רופאים לפי התמחויות במבנים השונים.
+
+צילום מסך - שאילתות מבט משולב:
+<img width="1111" height="519" alt="צילום מסך 2026-05-18 154745" src="https://github.com/user-attachments/assets/aba3fddf-f66a-41cf-b81e-268547879f8b" />
+
