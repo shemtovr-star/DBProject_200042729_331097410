@@ -708,9 +708,6 @@ CREATE INDEX idx_insurance_expiry ON InsurancePolicy(expiry_date);
 | idx_insurance_expiry | 0.191 ms | 0.036 ms | **5.3x** |
 
 ניתן לראות שאינדקסים על טבלאות גדולות (Patient, Appointment) נותנים שיפורים דרמטיים יותר מאשר על טבלאות קטנות (InsurancePolicy).
-
----
-
 ## שלב ג - אינטגרציה ומבטים
 
 ### מבוא ותיאור תהליך ההנדסה לאחור (Reverse Engineering)
@@ -731,12 +728,12 @@ erDiagram
         string email
     }
     PROJECT_MANAGER {
-        bigint member_id PK_FK
+        bigint member_id PK
         integer prior_experience_years
         string certification_level
     }
     FINANCE_MANAGER {
-        bigint member_id PK_FK
+        bigint member_id PK
         string education
     }
     MEDICAL_INSTITUTION {
@@ -771,14 +768,15 @@ erDiagram
         numeric rating
     }
 
-    STAFF_MEMBER ||--|o PROJECT_MANAGER : "IS_A"
-    STAFF_MEMBER ||--|o FINANCE_MANAGER : "IS_A"
+    STAFF_MEMBER ||--o| PROJECT_MANAGER : "IS_A"
+    STAFF_MEMBER ||--o| FINANCE_MANAGER : "IS_A"
     MEDICAL_INSTITUTION ||--o{ PROJECT : "hosts"
     PROJECT ||--o{ BUILDING_PLAN : "contains"
     BUILDING }o--o{ BUILDING_PLAN : "uses"
-    PROJECT }o--o{ CONTRACTOR : "executes_via_contract"
+    PROJECT }o--o{ CONTRACTOR : "executes"
     PROJECT }o--o{ PROJECT_MANAGER : "managed_by"
     PROJECT }o--o{ FINANCE_MANAGER : "monitored_by"
+```
 
 ### החלטות עיצוב ותהליך האינטגרציה
 בשלב העיצוב המשותף, החלטנו על קשר לוגי ועסקי מובהק: קליניקת הטיפולים שלנו (מערכת א') פועלת פיזית בתוך המבנים והמוסדות הרפואיים שמקימה מחלקת הבינוי (מערכת ב'). 
@@ -819,7 +817,10 @@ erDiagram
     DEPARTMENT ||--o{ DOCTOR : "employs"
     DOCTOR ||--o{ VISIT : "conducts"
     PATIENT ||--o{ VISIT : "undergoes"
+```
 
+#### תרשים DSD משולב (סכמה לוגית לאחר אינטגרציה)
+```mermaid
 erDiagram
     medical_institution {
         bigint institution_id PK
@@ -852,33 +853,28 @@ erDiagram
         int doctor_id FK
     }
 
-    medical_institution ||--o{ Department : "FK: institution_id"
-    Department ||--o{ Doctor : "FK: department_id"
-    Patient ||--o{ Visit : "FK: patient_id"
-    Doctor ||--o{ Visit : "FK: doctor_id"
+    medical_institution ||--o{ Department : "FK_institution_id"
+    Department ||--o{ Doctor : "FK_department_id"
+    Patient ||--o{ Visit : "FK_patient_id"
+    Doctor ||--o{ Visit : "FK_doctor_id"
+```
 
-תיאור המבטים (Views) ושליפת הנתונים
-מבט היסטוריית טיפולים בקליניקה (v_patient_visits_history): מבט המציג את נקודת המבט של הקליניקה המקורית שלנו. הוא מאחד נתוני מטופלים, ביקורים, אבחנות והרופאים המטפלים.
+### תיאור המבטים (Views) ושליפת הנתונים
 
-שאילתות על המבט: שליפת היסטוריה מלאה ממוינת וסיכום ביקורים לכל רופא.
+1. **מבט היסטוריית טיפולים בקליניקה (v_patient_visits_history):** מבט המציג את נקודת המבט של הקליניקה המקורית שלנו. הוא מאחד נתוני מטופלים, ביקורים, אבחנות והרופאים המטפלים.
+*שאילתות על המבט:* שליפת היסטוריה מלאה ממוינת וסיכום ביקורים לכל רופא.
 
-צילום מסך - שאילתות מבט 1:
+**צילום מסך - שאילתות מבט 1:**
 <img width="1401" height="521" alt="צילום מסך 2026-05-18 154708" src="https://github.com/user-attachments/assets/0eef8604-1cae-4e06-b287-a42cc4790030" />
 
+2. **מבט מעקב פרויקטים (v_project_progress):** מבט המציג את נקודת המבט של מחלקת הבינוי שקיבלנו. משלב פרויקטים, המוסדות בהם הם מבוצעים ואת סטטוס אבני הדרך (Milestones) שלהם.
+*שאילתות על המבט:* סינון פרויקטים קרובים וסיכום סטטוס אבני דרך לפי מוסד.
 
-
-מבט מעקב פרויקטים (v_project_progress): מבט המציג את נקודת המבט של מחלקת הבינוי שקיבלנו. משלב פרויקטים, המוסדות בהם הם מבוצעים ואת סטטוס אבני הדרך (Milestones) שלהם.
-
-שאילתות על המבט: סינון פרויקטים קרובים וסיכום סטטוס אבני דרך לפי מוסד.
-
-צילום מסך - שאילתות מבט 2:
+**צילום מסך - שאילתות מבט 2:**
 <img width="988" height="521" alt="צילום מסך 2026-05-18 154723" src="https://github.com/user-attachments/assets/b1120468-6474-4f23-82b5-a25d46e0575f" />
 
+3. **המבט המשולב (v_institution_clinical_staff):** מבט האינטגרציה המרכזי המציג את החיבור הפיזי בין העולמות: אילו מחלקות רפואיות ואילו רופאים פעילים פיזית בכל מוסד רפואי שהוקם.
+*שאילתות על המבט:* פריסת כוח אדם רופאי במוסדות ומיפוי רופאים לפי התמחויות במבנים השונים.
 
-המבט המשולב (v_institution_clinical_staff): מבט האינטגרציה המרכזי המציג את החיבור הפיזי בין העולמות: אילו מחלקות רפואיות ואילו רופאים פעילים פיזית בכל מוסד רפואי שהוקם.
-
-שאילתות על המבט: פריסת כוח אדם רופאי במוסדות ומיפוי רופאים לפי התמחויות במבנים השונים.
-
-צילום מסך - שאילתות מבט משולב:
+**צילום מסך - שאילתות מבט משולב:**
 <img width="1111" height="519" alt="צילום מסך 2026-05-18 154745" src="https://github.com/user-attachments/assets/aba3fddf-f66a-41cf-b81e-268547879f8b" />
-
