@@ -717,66 +717,8 @@ CREATE INDEX idx_insurance_expiry ON InsurancePolicy(expiry_date);
 3. **זיהוי ישויות חלשות וקשרי M:N:** טבלאות קשר מובהקות כמו `building_building_plan` הומרו בחזרה לקשרי רב-לרב מושגיים ב-ERD.
 
 #### תרשים ERD - מוסדות רפואה (הנדסה לאחור)
-```mermaid
-erDiagram
-    STAFF_MEMBER {
-        bigint member_id PK
-        string first_name
-        string last_name
-        date hire_date
-        numeric performance_score
-        string email
-    }
-    PROJECT_MANAGER {
-        bigint member_id PK
-        integer prior_experience_years
-        string certification_level
-    }
-    FINANCE_MANAGER {
-        bigint member_id PK
-        string education
-    }
-    MEDICAL_INSTITUTION {
-        bigint institution_id PK
-        string name
-        string address
-        string institution_type
-    }
-    PROJECT {
-        bigint project_id PK
-        string project_name
-        date planned_start_date
-        date target_end_date
-        integer priority_level
-    }
-    BUILDING {
-        bigint building_id PK
-        string building_name
-        string building_address
-        string construction_status
-    }
-    BUILDING_PLAN {
-        bigint plan_id PK
-        string title
-        text plan_description
-        date creation_date
-    }
-    CONTRACTOR {
-        bigint contractor_id PK
-        string company_name
-        string specialization
-        numeric rating
-    }
+<img width="2205" height="1797" alt="erdplus" src="https://github.com/user-attachments/assets/52a40120-1340-4f12-9993-46a94cd42466" />
 
-    STAFF_MEMBER ||--o| PROJECT_MANAGER : "IS_A"
-    STAFF_MEMBER ||--o| FINANCE_MANAGER : "IS_A"
-    MEDICAL_INSTITUTION ||--o{ PROJECT : "hosts"
-    PROJECT ||--o{ BUILDING_PLAN : "contains"
-    BUILDING }o--o{ BUILDING_PLAN : "uses"
-    PROJECT }o--o{ CONTRACTOR : "executes"
-    PROJECT }o--o{ PROJECT_MANAGER : "managed_by"
-    PROJECT }o--o{ FINANCE_MANAGER : "monitored_by"
-```
 
 ### החלטות עיצוב ותהליך האינטגרציה
 בשלב העיצוב המשותף, החלטנו על קשר לוגי ועסקי מובהק: קליניקת הטיפולים שלנו (מערכת א') פועלת פיזית בתוך המבנים והמוסדות הרפואיים שמקימה מחלקת הבינוי (מערכת ב'). 
@@ -784,80 +726,11 @@ erDiagram
 השינוי בוצע פיזית באמצעות פקודות `ALTER TABLE` בקובץ `Integrate.sql`, תוך שמירה על הנתונים הקיימים ואכלוסם בערכי ברירת מחדל תואמים כדי למנוע פגיעה באילוצי שלמות הישות (Integrity Constraints).
 
 #### תרשים ERD משולב ומערכת היחסים המשותפת
-```mermaid
-erDiagram
-    MEDICAL_INSTITUTION {
-        bigint institution_id PK
-        string name
-        string address
-    }
-    DEPARTMENT {
-        int department_id PK
-        string name
-        int floor
-        string phone
-    }
-    DOCTOR {
-        int doctor_id PK
-        string first_name
-        string last_name
-    }
-    PATIENT {
-        int patient_id PK
-        string first_name
-        string last_name
-    }
-    VISIT {
-        int visit_id PK
-        date visit_date
-        string diagnosis
-    }
-
-    MEDICAL_INSTITUTION ||--o{ DEPARTMENT : "hosts_physically"
-    DEPARTMENT ||--o{ DOCTOR : "employs"
-    DOCTOR ||--o{ VISIT : "conducts"
-    PATIENT ||--o{ VISIT : "undergoes"
-```
+<img width="4512" height="1797" alt="erdplus (4)" src="https://github.com/user-attachments/assets/bf2f8db5-9d4f-4b3a-b7fc-a8b5e5b254fc" />
 
 #### תרשים DSD משולב (סכמה לוגית לאחר אינטגרציה)
-```mermaid
-erDiagram
-    medical_institution {
-        bigint institution_id PK
-        varchar name
-        varchar address
-        varchar institution_type
-    }
-    Department {
-        int department_id PK
-        varchar name
-        int floor
-        varchar phone
-        bigint institution_id FK
-    }
-    Doctor {
-        int doctor_id PK
-        varchar first_name
-        varchar last_name
-        int department_id FK
-    }
-    Patient {
-        int patient_id PK
-        varchar first_name
-        varchar last_name
-    }
-    Visit {
-        int visit_id PK
-        date visit_date
-        int patient_id FK
-        int doctor_id FK
-    }
+<img width="4512" height="1797" alt="erdplus (3)" src="https://github.com/user-attachments/assets/c6af589d-601e-47c7-996c-6a1a268bc13c" />
 
-    medical_institution ||--o{ Department : "FK_institution_id"
-    Department ||--o{ Doctor : "FK_department_id"
-    Patient ||--o{ Visit : "FK_patient_id"
-    Doctor ||--o{ Visit : "FK_doctor_id"
-```
 
 ### תיאור המבטים (Views) ושליפת הנתונים
 
