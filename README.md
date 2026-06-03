@@ -708,3 +708,455 @@ CREATE INDEX idx_insurance_expiry ON InsurancePolicy(expiry_date);
 | idx_insurance_expiry | 0.191 ms | 0.036 ms | **5.3x** |
 
 ניתן לראות שאינדקסים על טבלאות גדולות (Patient, Appointment) נותנים שיפורים דרמטיים יותר מאשר על טבלאות קטנות (InsurancePolicy).
+
+
+## שלב ד' - תכנות מסד נתונים ב-PL/pgSQL
+
+### מבוא
+
+בשלב זה כתבנו תוכניות PL/pgSQL על בסיס הנתונים המשולב שנוצר באינטגרציה (שלב ג'). בסיס הנתונים המשולב מאחד את מערכת הקליניקה (מטופלים, רופאים, מחלקות, ביקורים, תורים) עם מערכת ניהול הבנייה של מוסדות רפואיים (medical_institution, project, milestone). החיבור בין שתי המערכות הוא דרך השדה `department.institution_id` המצביע על `medical_institution.institution_id` — כל מחלקה משויכת למוסד רפואי פיזי.
+
+כתבנו 2 פונקציות, 2 פרוצדורות, 2 טריגרים (אחד על UPDATE), 2 תוכניות ראשיות, ופונקציית עזר אחת להחזרת Ref Cursor. כל התוכניות פותחו ונבדקו על בסיס הנתונים `clinic_integrated`.
+
+**אימות בסיס הנתונים המשולב — מספרי רשומות:**
+
+![אימות מספרי רשומות](שלב ד/screenshots/00_rowcount_verification.png)
+
+הבסיס מכיל 20,000 מטופלים, 20,000 תורים, 100 רופאים, 10 מחלקות, 20,000 מוסדות רפואיים, 20,000 פרויקטים ו-994 ביקורים.
+
+**כיסוי האלמנטים הנדרשים (a–g):**
+
+| אלמנט | היכן מומש |
+|-------|-----------|
+| a. Cursor מפורש + סמוי | מפורש: פרוצדורה 1. סמוי: כל SELECT INTO בפונקציות ובפרוצדורות |
+| b. החזרת Ref Cursor | פונקציית העזר fn_doctors_by_department |
+| c. פקודות DML | פרוצדורה 1 (UPDATE), פרוצדורה 2 (UPDATE), הטריגרים |
+| d. הסתעפויות | IF/ELSE בכל התוכניות |
+| e. לולאות | LOOP בפרוצדורה 1 |
+| f. Exception | RAISE EXCEPTION בפונקציות ובפרוצדורות |
+| g. רשומות (RECORD) | פונקציה 2, פרוצדורה 1, תוכנית ראשית 1 |
+
+**הערה:** לא בוצעו שינויים במבנה הטבלאות בשלב זה (לא נדרשו ALTER TABLE), ולכן אין קובץ AlterTable.sql.
+
+---
+
+### פונקציה 1 — סיכום מוסד רפואי (fn_institution_summary)
+
+**קובץ:** `programs/Function1_Institution_Summary.sql`
+
+**תיאור:** הפונקציה מקבלת מזהה מוסד רפואי ומחזירה רשומה עם שם המוסד, מספר המחלקות ומספר הרופאים המשויכים אליו. הפונקציה חוצה את שתי המערכות (medical_institution → department → doctor). תחילה נבדק שהמוסד קיים; אם לא — נזרקת חריגה.
+
+```sql
+CREATE OR REPLACE FUNCTION fn_institution_summary(p_institution_id BIGINT)
+RETURNS TABLE (
+    institution_name VARCHAR,
+    department_count BIGINT,
+    doctor_count BIGINT
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_exists INTEGER;
+BEGIN
+    SELECT COUNT(*) INTO v_exists
+    FROM medical_institution
+    WHERE institution_id = p_institution_id;
+
+    IF v_exists = 0 THEN
+        RAISE EXCEPTION 'מוסד רפואי עם מזהה % לא קיים', p_institution_id;
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        mi.name,
+        COUNT(DISTINCT d.department_id),
+        COUNT(DISTINCT doc.doctor_id)
+    FROM medical_institution mi
+    LEFT JOIN department d ON d.institution_id = mi.institution_id
+    LEFT JOIN doctor doc ON doc.department_id = d.department_id
+    WHERE mi.institution_id = p_institution_id
+    GROUP BY mi.name;
+END;
+$$;
+```
+
+**יצירת הפונקציה:**
+
+![יצירת פונקציה 1](שלב ד/screenshots/fn1_create.png)
+
+**הרצה תקינה** — `SELECT * FROM fn_institution_summary(1);` החזיר את המוסד "Stephens-Bailey Medical Center" עם 10 מחלקות ו-100 רופאים:
+
+![הרצת פונקציה 1](שלב ד/screenshots/fn1_run_ok.png)
+
+**הוכחת חריגה** — `SELECT * FROM fn_institution_summary(999999);` זרק את החריגה "מוסד רפואי עם מזהה 999999 לא קיים":
+
+![חריגת פונקציה 1](שלב ד/screenshots/fn1_exception.png)
+
+---
+
+### פונקציה 2 — סיכום מטופל (fn_patient_summary)
+
+**קובץ:** `programs/Function2_Patient_Summary.sql`
+
+**תיאור:** הפונקציה מקבלת מזהה מטופל ומחזירה מחרוזת סיכום: שם, גיל מחושב מתאריך הלידה (AGE), מספר ביקורים ותאריך ביקור אחרון. הפונקציה משתמשת ברשומה (RECORD), ומבדילה בין מטופל ללא ביקורים למטופל עם ביקורים. אם המטופל לא קיים — נזרקת חריגה.
+
+```sql
+CREATE OR REPLACE FUNCTION fn_patient_summary(p_patient_id INTEGER)
+RETURNS TEXT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_patient RECORD;
+    v_age INTEGER;
+    v_visit_count INTEGER;
+    v_last_visit DATE;
+BEGIN
+    SELECT first_name, last_name, birth_date
+    INTO v_patient
+    FROM patient
+    WHERE patient_id = p_patient_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'מטופל עם מזהה % לא קיים', p_patient_id;
+    END IF;
+
+    v_age := EXTRACT(YEAR FROM AGE(CURRENT_DATE, v_patient.birth_date));
+
+    SELECT COUNT(*), MAX(visit_date)
+    INTO v_visit_count, v_last_visit
+    FROM visit
+    WHERE patient_id = p_patient_id;
+
+    IF v_visit_count = 0 THEN
+        RETURN format('מטופל: %s %s, גיל %s. אין ביקורים רשומים.',
+                      v_patient.first_name, v_patient.last_name, v_age);
+    ELSE
+        RETURN format('מטופל: %s %s, גיל %s. מספר ביקורים: %s. ביקור אחרון: %s.',
+                      v_patient.first_name, v_patient.last_name, v_age,
+                      v_visit_count, v_last_visit);
+    END IF;
+END;
+$$;
+```
+
+**יצירת הפונקציה:**
+
+![יצירת פונקציה 2](שלב ד/screenshots/fn2_create.png)
+
+**הרצה תקינה** — `SELECT fn_patient_summary(1);` החזיר "מטופל: Thomas Williams, גיל 75. אין ביקורים רשומים.":
+
+![הרצת פונקציה 2](שלב ד/screenshots/fn2_run_ok.png)
+
+**הוכחת חריגה** — `SELECT fn_patient_summary(999999);` זרק את החריגה "מטופל עם מזהה 999999 לא קיים":
+
+![חריגת פונקציה 2](שלב ד/screenshots/fn2_exception.png)
+
+---
+
+### פרוצדורה 1 — ביטול תורים ישנים (sp_cancel_old_appointments)
+
+**קובץ:** `programs/Procedure1_Cancel_Old_Appointments.sql`
+
+**תיאור:** הפרוצדורה מקבלת תאריך ומבטלת את כל התורים במצב 'scheduled' שתאריכם לפני התאריך שהתקבל. הפרוצדורה משתמשת ב-**cursor מפורש** העובר על התורים בלולאה, ובכל איטרציה מבצעת UPDATE שמשנה את הסטטוס ל-'cancelled'.
+
+```sql
+CREATE OR REPLACE PROCEDURE sp_cancel_old_appointments(p_before_date DATE)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    cur_appointments CURSOR FOR
+        SELECT appointment_id, appointment_date
+        FROM appointment
+        WHERE status = 'scheduled'
+          AND appointment_date < p_before_date;
+
+    v_appointment RECORD;
+    v_count INTEGER := 0;
+BEGIN
+    OPEN cur_appointments;
+    LOOP
+        FETCH cur_appointments INTO v_appointment;
+        EXIT WHEN NOT FOUND;
+
+        UPDATE appointment
+        SET status = 'cancelled'
+        WHERE appointment_id = v_appointment.appointment_id;
+
+        v_count := v_count + 1;
+    END LOOP;
+    CLOSE cur_appointments;
+
+    RAISE NOTICE 'בוטלו % תורים שתאריכם לפני %', v_count, p_before_date;
+END;
+$$;
+```
+
+**יצירת הפרוצדורה:**
+
+![יצירת פרוצדורה 1](שלב ד/screenshots/proc1_create.png)
+
+**הרצה ושינוי בבסיס הנתונים** — `CALL sp_cancel_old_appointments('2026-09-01');` הדפיס "בוטלו 507 תורים שתאריכם לפני 2026-09-01" — כלומר 507 שורות עודכנו בפועל:
+
+![הרצת פרוצדורה 1](שלב ד/screenshots/proc1_run_507.png)
+
+---
+
+### פרוצדורה 2 — העברת רופאים בין מחלקות (sp_transfer_doctors)
+
+**קובץ:** `programs/Procedure2_Transfer_Doctors.sql`
+
+**תיאור:** הפרוצדורה מקבלת מחלקת מקור ומחלקת יעד ומעבירה את כל הרופאים ביניהן. לפני הביצוע מתבצעות ארבע בדיקות תקינות: שהמחלקות שונות, שמחלקת המקור קיימת, שמחלקת היעד קיימת, ושיש רופאים להעביר. ההעברה מבוצעת ב-UPDATE.
+
+**הערה חשובה לגבי שפת ההודעות:** בגרסה הראשונה כתבנו את ההודעות בעברית, אך עורך ה-Query של pgAdmin נכשל בפענוח הקוד עקב בעיית כיווניות (RTL) שבלבלה את ניתוח ה-dollar-quote (`$$`) והחזירה שגיאת "unterminated dollar-quoted string". לכן כתבנו את ההודעות באנגלית והקוד עבר בהצלחה.
+
+**ניסיון ראשון — שגיאת RTL עקב הערות בעברית:**
+
+![שגיאת RTL פרוצדורה 2](שלב ד/screenshots/proc2_create_error_rtl.png)
+
+```sql
+CREATE OR REPLACE PROCEDURE sp_transfer_doctors(p_from_dept INTEGER, p_to_dept INTEGER)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_from_exists INTEGER;
+    v_to_exists INTEGER;
+    v_doctor_count INTEGER;
+BEGIN
+    IF p_from_dept = p_to_dept THEN
+        RAISE EXCEPTION 'Source and target department are identical (%)', p_from_dept;
+    END IF;
+
+    SELECT COUNT(*) INTO v_from_exists
+    FROM department WHERE department_id = p_from_dept;
+    IF v_from_exists = 0 THEN
+        RAISE EXCEPTION 'Source department % does not exist', p_from_dept;
+    END IF;
+
+    SELECT COUNT(*) INTO v_to_exists
+    FROM department WHERE department_id = p_to_dept;
+    IF v_to_exists = 0 THEN
+        RAISE EXCEPTION 'Target department % does not exist', p_to_dept;
+    END IF;
+
+    SELECT COUNT(*) INTO v_doctor_count
+    FROM doctor WHERE department_id = p_from_dept;
+    IF v_doctor_count = 0 THEN
+        RAISE NOTICE 'No doctors in department % to transfer', p_from_dept;
+        RETURN;
+    END IF;
+
+    UPDATE doctor
+    SET department_id = p_to_dept
+    WHERE department_id = p_from_dept;
+
+    RAISE NOTICE 'Transferred % doctors from department % to department %', v_doctor_count, p_from_dept, p_to_dept;
+END;
+$$;
+```
+
+**יצירת הפרוצדורה (הודעות באנגלית) — בהצלחה:**
+
+![יצירת פרוצדורה 2](שלב ד/screenshots/proc2_create_ok.png)
+
+**הרצה ושינוי בבסיס הנתונים** — `CALL sp_transfer_doctors(1, 2);` הדפיס "Transferred 3 doctors from department 1 to department 2":
+
+![הרצת פרוצדורה 2](שלב ד/screenshots/proc2_run_3transferred.png)
+
+**הוכחת חריגה** — `CALL sp_transfer_doctors(3, 999);` זרק את החריגה "Target department 999 does not exist":
+
+![חריגת פרוצדורה 2](שלב ד/screenshots/proc2_exception.png)
+
+---
+
+### טריגר 1 — בדיקת תאריך תור על UPDATE (tr_appointment_date_check)
+
+**קובץ:** `programs/Trigger1_Check_Appointment_Date.sql`
+
+**תיאור:** זהו הטריגר הנדרש בזמן UPDATE. הטריגר רץ אוטומטית לפני כל עדכון של שורה בטבלת appointment, ובודק שהתאריך החדש אינו בעבר. אם מנסים לקבוע תור לתאריך שעבר — נזרקת חריגה והעדכון נחסם.
+
+```sql
+CREATE OR REPLACE FUNCTION trg_check_appointment_date()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.appointment_date < CURRENT_DATE THEN
+        RAISE EXCEPTION 'Cannot set appointment date % in the past', NEW.appointment_date;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tr_appointment_date_check
+BEFORE UPDATE ON appointment
+FOR EACH ROW
+EXECUTE FUNCTION trg_check_appointment_date();
+```
+
+**יצירת הטריגר:**
+
+![יצירת טריגר 1](שלב ד/screenshots/trg1_create.png)
+
+**חסימת עדכון לא חוקי** — `UPDATE appointment SET appointment_date = '2020-01-01' WHERE appointment_id = 20001;` נחסם וזרק "Cannot set appointment date 2020-01-01 in the past":
+
+![חסימת עדכון בעבר](שלב ד/screenshots/trg1_block_2020.png)
+
+**עדכון חוקי עובר** — `UPDATE appointment SET appointment_date = '2027-01-01' WHERE appointment_id = 20001;` החזיר "UPDATE 1" — העדכון בוצע:
+
+![עדכון חוקי עובר](שלב ד/screenshots/trg1_success_2027.png)
+
+---
+
+### טריגר 2 — נורמליזציית אימייל מטופל על INSERT (tr_patient_email_normalize)
+
+**קובץ:** `programs/Trigger2_Normalize_Patient_Email.sql`
+
+**תיאור:** הטריגר רץ אוטומטית לפני הוספת מטופל חדש, וממיר את כתובת האימייל לאותיות קטנות תוך הסרת רווחים מיותרים (LOWER + TRIM), כדי לשמור על אחידות הנתונים ולמנוע כפילויות.
+
+```sql
+CREATE OR REPLACE FUNCTION trg_normalize_patient_email()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.email IS NOT NULL THEN
+        NEW.email := LOWER(TRIM(NEW.email));
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tr_patient_email_normalize
+BEFORE INSERT ON patient
+FOR EACH ROW
+EXECUTE FUNCTION trg_normalize_patient_email();
+```
+
+**יצירת הטריגר:**
+
+![יצירת טריגר 2](שלב ד/screenshots/trg2_create.png)
+
+**הוכחת פעולה** — הוספנו מטופל עם האימייל `  TEST.USER@EXAMPLE.COM  ` (אותיות גדולות ורווחים). השליפה לאחר ההוספה הראתה שהאימייל נשמר כ-`test.user@example.com` (קטן, ללא רווחים):
+
+![הוכחת נורמליזציה](שלב ד/screenshots/trg2_normalize_proof.png)
+
+---
+
+### תוכנית ראשית 1 (Main Program 1)
+
+**קובץ:** `programs/MainProgram1.sql`
+
+**תיאור:** בלוק אנונימי DO המדגים זימון של פונקציה ופרוצדורה יחד — קורא לפונקציה `fn_institution_summary(1)`, מדפיס את הסיכום, ואז מזמן את הפרוצדורה `sp_cancel_old_appointments`.
+
+```sql
+DO $$
+DECLARE
+    v_summary RECORD;
+BEGIN
+    RAISE NOTICE '=== Main Program 1 ===';
+
+    SELECT * INTO v_summary FROM fn_institution_summary(1);
+    RAISE NOTICE 'Institution: %, Departments: %, Doctors: %',
+                 v_summary.institution_name, v_summary.department_count, v_summary.doctor_count;
+
+    CALL sp_cancel_old_appointments('2026-09-01');
+
+    RAISE NOTICE '=== Done ===';
+END;
+$$;
+```
+
+**הרצה** — ההרצה הדפיסה ברצף את כותרת התוכנית, סיכום המוסד מהפונקציה ("Institution: Stephens-Bailey Medical Center, Departments: 10, Doctors: 100"), הודעת הביטול מהפרוצדורה, והודעת הסיום:
+
+![הרצת תוכנית ראשית 1](שלב ד/screenshots/main1_run.png)
+
+---
+
+### תוכנית ראשית 2 (Main Program 2)
+
+**קובץ:** `programs/MainProgram2.sql`
+
+**תיאור:** בלוק אנונימי DO המזמן את פונקציה 2 ופרוצדורה 2 — קורא לפונקציה `fn_patient_summary(5)`, מדפיס את הסיכום, ואז מזמן את הפרוצדורה `sp_transfer_doctors(5, 6)`.
+
+```sql
+DO $$
+DECLARE
+    v_patient_info TEXT;
+BEGIN
+    RAISE NOTICE '=== Main Program 2 ===';
+
+    v_patient_info := fn_patient_summary(5);
+    RAISE NOTICE 'Patient summary: %', v_patient_info;
+
+    CALL sp_transfer_doctors(5, 6);
+
+    RAISE NOTICE '=== Done ===';
+END;
+$$;
+```
+
+**הרצה** — ההרצה הדפיסה ברצף את כותרת התוכנית, סיכום המטופל ("Patient summary: מטופל: John Jackson, גיל 32. אין ביקורים רשומים."), הודעת העברת הרופאים ("Transferred 6 doctors from department 5 to department 6"), והודעת הסיום:
+
+![הרצת תוכנית ראשית 2](שלב ד/screenshots/main2_run.png)
+
+---
+
+### פונקציית עזר — החזרת Ref Cursor (fn_doctors_by_department)
+
+**קובץ:** `programs/Function3_RefCursor_Doctors.sql`
+
+**תיאור:** פונקציית עזר זו מכסה את דרישת "החזרת Ref Cursor" (סעיף b). הפונקציה מקבלת מזהה מחלקה ושם cursor, פותחת cursor (OPEN ... FOR) על כל הרופאים במחלקה, ומחזירה את ה-refcursor. הקריאה החיצונית מבצעת FETCH לשליפת התוצאות.
+
+```sql
+CREATE OR REPLACE FUNCTION fn_doctors_by_department(p_department_id INTEGER, p_cursor refcursor)
+RETURNS refcursor
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    OPEN p_cursor FOR
+        SELECT doctor_id, first_name, last_name, specialization
+        FROM doctor
+        WHERE department_id = p_department_id;
+    RETURN p_cursor;
+END;
+$$;
+```
+
+**יצירת הפונקציה:**
+
+![יצירת פונקציית Ref Cursor](שלב ד/screenshots/refcursor_create.png)
+
+**הרצה בתוך טרנזקציה** — הרצנו את הרצף הבא, וה-FETCH החזיר 15 רופאים ממחלקה 2:
+
+```sql
+BEGIN;
+SELECT fn_doctors_by_department(2, 'doctor_cur');
+FETCH ALL IN doctor_cur;
+COMMIT;
+```
+
+![תוצאות Ref Cursor — 15 רופאים](שלב ד/screenshots/refcursor_fetch_15.png)
+
+---
+
+### גיבוי
+
+נוצר קובץ גיבוי מעודכן `backup4` (פורמט Custom) של בסיס הנתונים המשולב לאחר הוספת כל התוכניות, באמצעות כלי ה-Backup של pgAdmin:
+
+![גיבוי backup4](שלב ד/screenshots/backup4_completed.png)
+
+---
+
+### רשימת הקבצים בשלב ד'
+
+- `programs/Function1_Institution_Summary.sql`
+- `programs/Function2_Patient_Summary.sql`
+- `programs/Procedure1_Cancel_Old_Appointments.sql`
+- `programs/Procedure2_Transfer_Doctors.sql`
+- `programs/Trigger1_Check_Appointment_Date.sql`
+- `programs/Trigger2_Normalize_Patient_Email.sql`
+- `programs/MainProgram1.sql`
+- `programs/MainProgram2.sql`
+- `programs/Function3_RefCursor_Doctors.sql`
+- `backup4` — קובץ גיבוי של בסיס הנתונים המשולב
+- `screenshots/` — צילומי מסך של ההרצות
